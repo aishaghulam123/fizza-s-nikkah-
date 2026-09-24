@@ -360,11 +360,14 @@ document.querySelectorAll("[data-scratch]").forEach((wrap) => {
   const label = wrap.getAttribute("data-label") || "— scratch to reveal —";
   let revealed = false, drawing = false;
 
+  let lastW = 0, lastH = 0;
   function paint() {
     if (revealed) return;
-    const width = Math.round(wrap.getBoundingClientRect().width);
-    const height = Math.round(wrap.getBoundingClientRect().height);
+    const box = wrap.getBoundingClientRect();
+    const width = Math.round(box.width);
+    const height = Math.round(box.height);
     if (width < 2 || height < 2) { requestAnimationFrame(paint); return; }
+    lastW = width; lastH = height;
     const dpr = 1;
     canvas.width = width * dpr;
     canvas.height = height * dpr;
@@ -386,7 +389,16 @@ document.querySelectorAll("[data-scratch]").forEach((wrap) => {
     ctx.fillText(label, canvas.width / 2, canvas.height / 2);
   }
   requestAnimationFrame(paint);
-  let rt; window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(paint, 200); });
+  let rt;
+  const repaintIfResized = () => {
+    clearTimeout(rt);
+    rt = setTimeout(() => {
+      const b = wrap.getBoundingClientRect();
+      if (Math.abs(b.width - lastW) > 1 || Math.abs(b.height - lastH) > 1) paint();
+    }, 200);
+  };
+  window.addEventListener("resize", repaintIfResized);
+  if ("ResizeObserver" in window) new ResizeObserver(repaintIfResized).observe(wrap);   // fonts loading / content reflow
 
   const radius = () => Math.max(20, canvas.width * 0.055);
 
@@ -513,9 +525,13 @@ function initScroll() {
   });
 
   /* Timeline items */
+  const narrowScreen = window.matchMedia("(max-width: 640px)").matches;
   gsap.utils.toArray(".tl-item").forEach((el, i) => {
     gsap.from(el, {
-      opacity: 0, x: i % 2 === 0 ? -60 : 60, duration: 1.2,
+      opacity: 0,
+      // phones: slide up (a sideways offset pushes the page wider than the screen)
+      ...(narrowScreen ? { y: 40 } : { x: i % 2 === 0 ? -60 : 60 }),
+      duration: 1.2,
       scrollTrigger: { trigger: el, start: "top 85%" },
     });
   });
@@ -542,5 +558,14 @@ function initScroll() {
     scrollTrigger: { trigger: "#scene-ending", start: "center center", end: "bottom bottom", scrub: 1 },
   });
 
-  let t; window.addEventListener("resize", () => { clearTimeout(t); t = setTimeout(() => ScrollTrigger.refresh(), 250); });
+  let t, lastW = window.innerWidth;
+  window.addEventListener("resize", () => {
+    clearTimeout(t);
+    t = setTimeout(() => {
+      if (window.innerWidth === lastW) return;   // height-only change (mobile address bar) — no refresh needed
+      lastW = window.innerWidth;
+      ScrollTrigger.refresh();
+    }, 250);
+  });
+  window.addEventListener("orientationchange", () => setTimeout(() => ScrollTrigger.refresh(), 350));
 }
